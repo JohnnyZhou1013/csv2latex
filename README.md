@@ -2,6 +2,8 @@
 
 A simple tool for turning CSV and Excel files into LaTeX tables. 
 
+[csv2latex.html](https://johnnyzhou1013.github.io/csv2latex/csv2latex.html)
+
 ## Features
 
 - Paste CSV or drag & drop `.csv` / `.xlsx` files
