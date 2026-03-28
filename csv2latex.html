@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSV → LaTeX Table Converter</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;700&display=swap');
+
+:root {
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --surface2: #f0f0f3;
+  --border: #dcdce4;
+  --border2: #c8c8d4;
+  --text: #1a1a2e;
+  --muted: #6b6b80;
+  --accent: #991b1b;
+  --accent2: #b91c1c;
+  --green: #16a34a;
+  --amber: #b45309;
+  --red: #dc2626;
+  --radius: 8px;
+  --radius-lg: 12px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Syne', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; }
+
+header {
+  padding: 16px 24px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; background: var(--surface);
+}
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; letter-spacing: -0.02em; }
+.logo-icon {
+  width: 26px; height: 26px; background: var(--accent); border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 500; color: white;
+}
+.header-badges { display: flex; gap: 6px; }
+.badge {
+  font-family: 'IBM Plex Mono', monospace; font-size: 10px; padding: 2px 7px;
+  border-radius: 4px; border: 1px solid var(--border2); color: var(--muted); background: var(--surface2);
+}
+
+.main { display: grid; grid-template-columns: 290px 1fr; height: calc(100vh - 57px); overflow: hidden; }
+
+.sidebar {
+  background: var(--surface); border-right: 1px solid var(--border);
+  overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 18px;
+}
+.sidebar::-webkit-scrollbar { width: 3px; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+.section { display: flex; flex-direction: column; gap: 8px; }
+.section-title {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted); padding-bottom: 6px; border-bottom: 1px solid var(--border);
+}
+
+.drop-zone {
+  border: 1.5px dashed var(--border2); border-radius: var(--radius-lg);
+  padding: 16px; text-align: center; cursor: pointer; transition: border-color 0.15s, background 0.15s;
+}
+.drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: rgba(153,27,27,0.06); }
+.drop-zone .icon { font-size: 20px; margin-bottom: 4px; }
+.drop-zone p { font-size: 11px; color: var(--muted); line-height: 1.5; }
+.drop-zone span { color: var(--accent); font-weight: 500; }
+#fileInput { display: none; }
+
+textarea {
+  width: 100%; height: 100px; font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+  background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 8px; resize: vertical; line-height: 1.6; transition: border-color 0.15s;
+}
+textarea:focus { outline: none; border-color: var(--accent); }
+
+.row-ctrl { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.row-ctrl label { font-size: 12px; color: var(--muted); min-width: 80px; }
+
+select, input[type=text] {
+  background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 5px 8px; font-family: 'Syne', sans-serif; font-size: 12px;
+  transition: border-color 0.15s; flex: 1;
+}
+select:focus, input[type=text]:focus { outline: none; border-color: var(--accent); }
+
+.toggle-row { display: flex; align-items: center; justify-content: space-between; }
+.toggle-row label.desc { font-size: 12px; color: var(--muted); }
+.toggle { position: relative; width: 34px; height: 18px; cursor: pointer; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.track { position: absolute; inset: 0; background: var(--border2); border-radius: 9px; transition: background 0.2s; }
+.track:before {
+  content: ''; position: absolute; width: 12px; height: 12px; top: 3px; left: 3px;
+  background: var(--muted); border-radius: 50%; transition: transform 0.2s, background 0.2s;
+}
+.toggle input:checked + .track { background: rgba(153,27,27,0.30); }
+.toggle input:checked + .track:before { transform: translateX(16px); background: var(--accent); }
+
+input[type=range] {
+  -webkit-appearance: none; width: 100%; height: 3px;
+  background: var(--border2); border-radius: 2px; border: none; padding: 0; cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 13px; height: 13px; background: var(--accent); border-radius: 50%;
+}
+
+.val-pill {
+  font-family: 'IBM Plex Mono', monospace; font-size: 11px; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; color: var(--accent2);
+  min-width: 34px; text-align: center;
+}
+
+.col-align-grid { display: flex; flex-direction: column; gap: 4px; max-height: 130px; overflow-y: auto; }
+.col-align-row { display: flex; align-items: center; gap: 6px; }
+.col-name {
+  font-family: 'IBM Plex Mono', monospace; color: var(--muted);
+  width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px;
+}
+.align-btns { display: flex; gap: 3px; }
+.ab {
+  font-family: 'IBM Plex Mono', monospace; font-size: 10px; padding: 2px 7px;
+  border-radius: 4px; border: 1px solid var(--border2); background: transparent; color: var(--muted);
+  cursor: pointer; transition: all 0.12s;
+}
+.ab:hover { border-color: var(--accent2); color: var(--accent2); }
+.ab.active { background: rgba(153,27,27,0.10); border-color: var(--accent); color: var(--accent); }
+.numeric-badge {
+  font-size: 9px; font-family: 'IBM Plex Mono', monospace; background: rgba(251,191,36,0.15);
+  color: var(--amber); border: 1px solid rgba(251,191,36,0.3); border-radius: 3px; padding: 1px 4px; margin-left: 3px;
+}
+
+.content-area { display: flex; flex-direction: column; overflow: hidden; }
+.tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--surface); padding: 0 20px; }
+.tab {
+  font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 500; padding: 11px 14px;
+  cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s; background: transparent;
+  border-top: none; border-left: none; border-right: none;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent2); border-bottom-color: var(--accent); }
+
+.panels { flex: 1; overflow: hidden; display: flex; }
+.panel { display: none; flex: 1; overflow: auto; padding: 16px; flex-direction: column; gap: 12px; }
+.panel.active { display: flex; }
+
+/* ── Toolbar ── */
+.editor-toolbar {
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  padding: 10px 12px; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: var(--radius); flex-shrink: 0;
+}
+.tb-btn {
+  font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 4px 10px;
+  border-radius: 5px; border: 1px solid var(--border2); background: transparent; color: var(--muted);
+  cursor: pointer; transition: all 0.12s; white-space: nowrap;
+}
+.tb-btn:hover { border-color: var(--accent2); color: var(--accent); background: rgba(153,27,27,0.06); }
+.tb-btn.danger { border-color: rgba(220,38,38,0.35); color: var(--red); }
+.tb-btn.danger:hover { background: rgba(220,38,38,0.07); border-color: var(--red); }
+.tb-btn.danger:disabled { opacity: 0.3; cursor: not-allowed; }
+.tb-btn.primary { background: var(--accent); border-color: var(--accent); color: white; font-weight: 500; }
+.tb-btn.primary:hover { background: var(--accent2); border-color: var(--accent2); }
+.tb-sep { width: 1px; height: 18px; background: var(--border2); margin: 0 2px; }
+.tb-label { font-size: 10px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; }
+.sel-count {
+  font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--accent);
+  background: rgba(153,27,27,0.07); border: 1px solid rgba(153,27,27,0.18);
+  border-radius: 4px; padding: 2px 7px; display: none;
+}
+.sel-count.visible { display: inline; }
+
+.editor-scroll { overflow: auto; flex: 1; }
+
+/* ── Edit table ── */
+table.edit-table { border-collapse: collapse; font-family: 'IBM Plex Mono', monospace; font-size: 12px; min-width: 100%; }
+
+/* column select checkbox row */
+table.edit-table thead tr.col-check-row th {
+  background: transparent; border: none; padding: 4px 0 2px; text-align: center; vertical-align: middle;
+}
+table.edit-table thead tr.col-check-row th.ctrl-th { width: 28px; }
+
+/* header row */
+table.edit-table thead tr.col-header-row th {
+  background: var(--surface); border: 1px solid var(--border2);
+  padding: 0; min-width: 100px; vertical-align: top;
+}
+table.edit-table thead tr.col-header-row th.ctrl-th { background: transparent; border: none; width: 28px; }
+
+.col-drag-handle { display: flex; align-items: center; justify-content: space-between; padding: 3px 6px 0; cursor: grab; }
+.drag-dots { color: var(--border2); font-size: 11px; letter-spacing: -1px; user-select: none; }
+.col-header-input {
+  width: 100%; border: none; outline: none; background: transparent; color: var(--text);
+  font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500;
+  padding: 4px 8px 6px; text-align: center;
+}
+.col-header-input:focus { background: rgba(153,27,27,0.06); }
+
+/* selected column highlight */
+table.edit-table thead tr.col-header-row th.col-selected { background: rgba(220,38,38,0.06); border-color: rgba(220,38,38,0.3); }
+table.edit-table tbody tr td.col-selected { background: rgba(220,38,38,0.04); }
+
+table.edit-table tbody td { border: 1px solid var(--border); padding: 0; }
+table.edit-table tbody td.ctrl-td { border: none; background: transparent; padding: 0 4px; width: 28px; }
+table.edit-table tbody td.chk-td { border: none; background: transparent; padding: 0; width: 28px; text-align: center; }
+
+/* selected row highlight */
+table.edit-table tbody tr.row-selected td { background: rgba(220,38,38,0.04); }
+table.edit-table tbody tr.row-selected td.ctrl-td { background: transparent; }
+
+.row-handle {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 2px; cursor: grab; padding: 6px 4px; color: var(--border2);
+}
+.row-handle:hover { color: var(--muted); }
+.row-handle span { display: block; width: 14px; height: 2px; background: currentColor; border-radius: 1px; }
+
+.cell-input {
+  width: 100%; border: none; outline: none; background: transparent; color: var(--text);
+  font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 7px 10px; transition: background 0.1s;
+}
+.cell-input:focus { background: rgba(153,27,27,0.05); }
+
+table.edit-table tbody tr.dragging { opacity: 0.35; }
+table.edit-table thead th.dragging { opacity: 0.35; }
+table.edit-table tbody tr.drag-target td { border-top: 2px solid var(--accent); }
+table.edit-table thead th.drag-target { border-left: 2px solid var(--accent); }
+table.edit-table thead th.dragging { opacity: 0.35; }
+table.edit-table tbody tr.dragging { opacity: 0.35; }
+
+/* checkbox styling */
+input[type=checkbox] {
+  width: 13px; height: 13px; cursor: pointer;
+  accent-color: var(--red);
+}
+
+.add-row-btn {
+  display: flex; align-items: center; gap: 6px; padding: 7px 12px; margin-top: 6px;
+  font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted);
+  border: 1.5px dashed var(--border2); border-radius: var(--radius); background: transparent;
+  cursor: pointer; width: 100%; transition: all 0.15s;
+}
+.add-row-btn:hover { border-color: var(--accent); color: var(--accent2); }
+
+/* ── Preview ── */
+.preview-wrap { overflow-x: auto; }
+table.preview { border-collapse: collapse; font-family: 'IBM Plex Mono', monospace; font-size: 12px; width: 100%; }
+table.preview th { background: var(--surface2); color: var(--text); padding: 8px 14px; text-align: left; font-weight: 500; border-bottom: 2px solid var(--border2); }
+table.preview td { padding: 7px 14px; color: var(--text); border-bottom: 1px solid var(--border); }
+table.preview.booktabs th { border-top: 2px solid #333; border-bottom: 1px solid #333; background: transparent; }
+table.preview.booktabs tbody tr:last-child td { border-bottom: 2px solid #333; }
+table.preview.no-hlines td { border-bottom: none; }
+table.preview.zebra tbody tr:nth-child(even) td { background: var(--surface2); }
+table.preview .al { text-align: left; }
+table.preview .ac { text-align: center; }
+table.preview .ar { text-align: right; }
+table.preview .num { color: var(--accent2); }
+
+/* ── LaTeX ── */
+.actions-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; flex-shrink: 0; }
+.status { font-size: 11px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; margin-left: auto; }
+.status.ok { color: var(--green); }
+.code-wrap { flex: 1; min-height: 200px; }
+pre.latex {
+  font-family: 'IBM Plex Mono', monospace; font-size: 12px; line-height: 1.7;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 16px; overflow: auto; height: 100%; color: var(--text); white-space: pre;
+}
+.latex-kw { color: #9b1c1c; font-weight: 500; }
+.latex-arg { color: #b91c1c; }
+.latex-cmt { color: #a16207; font-style: italic; }
+.latex-num { color: #7f1d1d; }
+
+.btn {
+  font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 500; padding: 7px 14px;
+  border-radius: var(--radius); border: 1px solid var(--border2); background: transparent; color: var(--muted);
+  cursor: pointer; transition: all 0.15s; display: inline-flex; align-items: center; gap: 6px;
+}
+.btn:hover { border-color: var(--accent2); color: var(--accent2); background: rgba(153,27,27,0.06); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
+.btn.primary:hover { background: var(--accent2); border-color: var(--accent2); }
+
+.err-msg { font-size: 11px; color: var(--red); font-family: 'IBM Plex Mono', monospace; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><div class="logo-icon">tex</div>CSV → LaTeX</div>
+  <div class="header-badges">
+    <span class="badge">booktabs</span>
+    <span class="badge">siunitx</span>
+    <span class="badge">xlsx</span>
+    <span class="badge">live edit</span>
+  </div>
+</header>
+
+<div class="main">
+  <div class="sidebar">
+
+    <div class="section">
+      <div class="section-title">Input</div>
+      <div class="drop-zone" id="dropZone">
+        <div class="icon">⬆</div>
+        <p>Drop <span>.csv</span> or <span>.xlsx</span><br>or <span id="browseLink">browse</span></p>
+      </div>
+      <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
+      <textarea id="csvInput" spellcheck="false" placeholder="Paste CSV here…">Author,Year,Method,AUC,F1
+Smith et al.,2021,LSTM,0.921,0.874
+Chen & Wu,2022,Transformer,0.948,0.903
+Li et al.,2023,HMoE,0.963,0.931
+Johnson,2020,Baseline,0.887,0.821</textarea>
+      <div class="err-msg" id="csvErr"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Table style</div>
+      <div class="toggle-row"><label class="desc">Booktabs rules</label><label class="toggle"><input type="checkbox" id="booktabs" checked><span class="track"></span></label></div>
+      <div class="toggle-row"><label class="desc">Horizontal grid lines</label><label class="toggle"><input type="checkbox" id="gridlines"><span class="track"></span></label></div>
+      <div class="toggle-row"><label class="desc">Vertical grid lines</label><label class="toggle"><input type="checkbox" id="vlines"><span class="track"></span></label></div>
+      <div class="toggle-row"><label class="desc">Zebra shading</label><label class="toggle"><input type="checkbox" id="zebra"><span class="track"></span></label></div>
+      <div class="toggle-row"><label class="desc">Bold header</label><label class="toggle"><input type="checkbox" id="boldHeader" checked><span class="track"></span></label></div>
+      <div class="toggle-row"><label class="desc">siunitx S-column</label><label class="toggle"><input type="checkbox" id="siunitx" checked><span class="track"></span></label></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Font &amp; spacing</div>
+      <div class="row-ctrl">
+        <label>Font size</label>
+        <select id="fontSize">
+          <option value="\scriptsize">\scriptsize</option>
+          <option value="\footnotesize">\footnotesize</option>
+          <option value="\small">\small</option>
+          <option value="\normalsize" selected>\normalsize</option>
+          <option value="\large">\large</option>
+        </select>
+      </div>
+      <div class="row-ctrl">
+        <label>Row padding</label>
+        <input type="range" min="2" max="14" value="5" id="rowpad" step="1">
+        <span class="val-pill" id="rowpadVal">5pt</span>
+      </div>
+      <div class="row-ctrl">
+        <label>Decimals</label>
+        <input type="range" min="1" max="6" value="3" id="decimals" step="1">
+        <span class="val-pill" id="decimalsVal">3</span>
+      </div>
+      <div class="row-ctrl">
+        <label>Float env</label>
+        <select id="floatEnv">
+          <option value="table">table</option>
+          <option value="table*">table*</option>
+          <option value="sidewaystable">sidewaystable</option>
+          <option value="none">none</option>
+        </select>
+      </div>
+      <div class="row-ctrl">
+        <label>Position</label>
+        <select id="position">
+          <option value="htbp">htbp</option>
+          <option value="h">h</option><option value="t">t</option>
+          <option value="b">b</option><option value="p">p</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Caption &amp; label</div>
+      <div class="row-ctrl"><label>Caption</label><input type="text" id="caption" value="Results comparison"></div>
+      <div class="row-ctrl"><label>Label</label><input type="text" id="label" value="tab:results"></div>
+      <div class="row-ctrl">
+        <label>Caption pos</label>
+        <select id="captionPos"><option value="above">Above</option><option value="below" selected>Below</option></select>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Column alignment</div>
+      <div class="col-align-grid" id="colAlignGrid"></div>
+    </div>
+
+  </div>
+
+  <div class="content-area">
+    <div class="tabs">
+      <button class="tab active" data-tab="editor">Edit table</button>
+      <button class="tab" data-tab="preview">Preview</button>
+      <button class="tab" data-tab="latex">LaTeX</button>
+    </div>
+    <div class="panels">
+
+      <!-- EDITOR -->
+      <div class="panel active" id="tab-editor">
+        <div class="editor-toolbar">
+          <span class="tb-label">Add row</span>
+          <button class="tb-btn" id="addRowTopBtn">↑ top</button>
+          <button class="tb-btn" id="addRowBotBtn">↓ bottom</button>
+          <div class="tb-sep"></div>
+          <span class="tb-label">Add col</span>
+          <button class="tb-btn" id="addColLBtn">← left</button>
+          <button class="tb-btn" id="addColRBtn">→ right</button>
+          <div class="tb-sep"></div>
+          <span class="tb-label">Delete</span>
+          <button class="tb-btn danger" id="delRowsBtn" disabled>✕ rows</button>
+          <button class="tb-btn danger" id="delColsBtn" disabled>✕ cols</button>
+          <span class="sel-count" id="selCount"></span>
+          <div class="tb-sep"></div>
+          <button class="tb-btn danger" id="clearBtn">Clear values</button>
+          <div class="tb-sep"></div>
+          <button class="tb-btn primary" id="generateBtn">Generate LaTeX ↗</button>
+        </div>
+        <div class="editor-scroll">
+          <table class="edit-table" id="editTable"></table>
+          <button class="add-row-btn" id="addRowInlineBtn">＋ add row</button>
+        </div>
+      </div>
+
+      <!-- PREVIEW -->
+      <div class="panel" id="tab-preview">
+        <div class="preview-wrap" id="previewWrap"></div>
+        <div class="actions-bar">
+          <div class="status ok" id="previewStatus">Ready</div>
+        </div>
+      </div>
+
+      <!-- LATEX -->
+      <div class="panel" id="tab-latex">
+        <div class="actions-bar">
+          <button class="btn primary" id="exportBtn">⬇ Export .tex</button>
+          <button class="btn" id="copyBtn">Copy LaTeX</button>
+          <div class="status" id="copyStatus"></div>
+        </div>
+        <div class="code-wrap">
+          <pre class="latex" id="latexOut"></pre>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── State ── */
+let S = { headers: [], rows: [] };
+let aligns = [];
+let isNum = [];
+let dragRow = null, dragCol = null;
+
+/* ── Parsers ── */
+function parseCSV(text) {
+  const lines = text.trim().split('\n').filter(l => l.trim());
+  if (lines.length < 2) return null;
+  const split = line => {
+    const res = []; const re = /("(?:[^"]|"")*"|[^,]*)(,|$)/g;
+    let m, prev = -1;
+    while ((m = re.exec(line)) !== null) {
+      if (m.index === prev) break; prev = m.index;
+      let val = m[1].trim();
+      if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1,-1).replace(/""/g,'"');
+      res.push(val); if (!m[2]) break;
+    }
+    return res;
+  };
+  return { headers: split(lines[0]), rows: lines.slice(1).map(split) };
+}
+
+function parseXLSX(buf) {
+  const wb = XLSX.read(buf, { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const d = XLSX.utils.sheet_to_json(ws, { header: 1 });
+  if (d.length < 2) return null;
+  return { headers: d[0].map(String), rows: d.slice(1).map(r => r.map(v => v===undefined?'':String(v))) };
+}
+
+/* ── Numeric detection ── */
+function detectNum(data) {
+  return data.headers.map((_,ci) => {
+    const vals = data.rows.map(r => r[ci]||'').filter(v => v!=='');
+    const n = vals.filter(v => !isNaN(parseFloat(v)) && isFinite(v)).length;
+    return vals.length > 0 && n/vals.length > 0.7;
+  });
+}
+
+/* ── Sync DOM → state ── */
+function syncFromDOM() {
+  const t = document.getElementById('editTable');
+  S.headers = [...t.querySelectorAll('.col-header-input')].map(i => i.value.trim()||'Col');
+  S.rows = [...t.querySelectorAll('tbody tr')].map(tr =>
+    [...tr.querySelectorAll('.cell-input')].map(i => i.value)
+  );
+}
+
+/* ── Escape HTML ── */
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* ── Selection state ── */
+function getSelRows() {
+  return [...document.querySelectorAll('.row-chk:checked')].map(c => parseInt(c.dataset.ri));
+}
+function getSelCols() {
+  return [...document.querySelectorAll('.col-chk:checked')].map(c => parseInt(c.dataset.ci));
+}
+function updateSelUI() {
+  const rows = getSelRows().length;
+  const cols = getSelCols().length;
+  const total = rows + cols;
+  const sc = document.getElementById('selCount');
+  const dr = document.getElementById('delRowsBtn');
+  const dc = document.getElementById('delColsBtn');
+  dr.disabled = rows === 0;
+  dc.disabled = cols === 0;
+  if (total > 0) {
+    sc.textContent = `${rows ? rows+' row'+(rows>1?'s':'') : ''}${rows&&cols?' · ':''}${cols ? cols+' col'+(cols>1?'s':'') : ''} selected`;
+    sc.classList.add('visible');
+  } else {
+    sc.classList.remove('visible');
+  }
+  // highlight selected rows
+  document.querySelectorAll('tbody tr[data-ri]').forEach(tr => {
+    const ri = parseInt(tr.dataset.ri);
+    tr.classList.toggle('row-selected', getSelRows().includes(ri));
+  });
+  // highlight selected cols
+  const selCols = getSelCols();
+  document.querySelectorAll('thead tr.col-header-row th[data-ci]').forEach(th => {
+    th.classList.toggle('col-selected', selCols.includes(parseInt(th.dataset.ci)));
+  });
+  document.querySelectorAll('tbody td[data-ci]').forEach(td => {
+    td.classList.toggle('col-selected', selCols.includes(parseInt(td.dataset.ci)));
+  });
+}
+
+/* ── Build editable table ── */
+function buildEditor() {
+  const t = document.getElementById('editTable');
+  const n = S.headers.length;
+
+  /* col checkbox row */
+  let chkRow = '<tr class="col-check-row"><th class="ctrl-th"></th>';
+  S.headers.forEach((_,ci) => {
+    chkRow += `<th class="ctrl-th" style="text-align:center"><input type="checkbox" class="col-chk" data-ci="${ci}" title="Select column ${ci+1}"></th>`;
+  });
+  chkRow += '<th class="ctrl-th"></th></tr>';
+
+  /* header row */
+  let hdrRow = '<tr class="col-header-row"><th class="ctrl-th"></th>';
+  S.headers.forEach((h, ci) => {
+    hdrRow += `<th draggable="true" data-ci="${ci}">
+      <div class="col-drag-handle"><span class="drag-dots">⠿</span></div>
+      <input class="col-header-input" type="text" value="${esc(h)}" placeholder="Header">
+    </th>`;
+  });
+  hdrRow += '<th class="ctrl-th"></th></tr>';
+
+  let thead = `<thead>${chkRow}${hdrRow}</thead>`;
+
+  /* body */
+  let tbody = '<tbody>';
+  S.rows.forEach((row, ri) => {
+    tbody += `<tr draggable="true" data-ri="${ri}">`;
+    tbody += `<td class="ctrl-td"><div class="row-handle"><span></span><span></span><span></span></div></td>`;
+    for (let ci = 0; ci < n; ci++) {
+      tbody += `<td data-ci="${ci}"><input class="cell-input" type="text" value="${esc(row[ci]||'')}"></td>`;
+    }
+    tbody += `<td class="chk-td"><input type="checkbox" class="row-chk" data-ri="${ri}" title="Select row ${ri+1}"></td>`;
+    tbody += '</tr>';
+  });
+  tbody += '</tbody>';
+
+  t.innerHTML = thead + tbody;
+  wireEditor(t);
+  updateSelUI();
+}
+
+function wireEditor(t) {
+  /* col drag */
+  t.querySelectorAll('thead th[data-ci]').forEach(th => {
+    th.addEventListener('dragstart', e => {
+      dragCol = parseInt(th.dataset.ci); th.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    th.addEventListener('dragend', () => {
+      t.querySelectorAll('th').forEach(x => x.classList.remove('dragging','drag-target'));
+      dragCol = null;
+    });
+    th.addEventListener('dragover', e => {
+      if (dragCol===null || dragRow!==null) return; e.preventDefault();
+      t.querySelectorAll('th').forEach(x => x.classList.remove('drag-target'));
+      th.classList.add('drag-target');
+    });
+    th.addEventListener('drop', e => {
+      e.preventDefault();
+      const dest = parseInt(th.dataset.ci);
+      if (dragCol===null || dragCol===dest) return;
+      syncFromDOM();
+      const mv = a => { const val = a.splice(dragCol,1)[0]; a.splice(dest,0,val); };
+      mv(S.headers); mv(aligns); mv(isNum); S.rows.forEach(r => mv(r));
+      dragCol = null; buildEditor(); buildAlignUI();
+    });
+  });
+
+  /* row drag */
+  t.querySelectorAll('tbody tr[data-ri]').forEach(tr => {
+    tr.addEventListener('dragstart', e => {
+      dragRow = parseInt(tr.dataset.ri); tr.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    tr.addEventListener('dragend', () => {
+      t.querySelectorAll('tr').forEach(x => x.classList.remove('dragging','drag-target'));
+      dragRow = null;
+    });
+    tr.addEventListener('dragover', e => {
+      if (dragRow===null || dragCol!==null) return; e.preventDefault();
+      t.querySelectorAll('tr').forEach(x => x.classList.remove('drag-target'));
+      tr.classList.add('drag-target');
+    });
+    tr.addEventListener('drop', e => {
+      e.preventDefault();
+      const dest = parseInt(tr.dataset.ri);
+      if (dragRow===null || dragRow===dest) return;
+      syncFromDOM();
+      const moved = S.rows.splice(dragRow,1)[0]; S.rows.splice(dest,0,moved);
+      dragRow = null; buildEditor();
+    });
+  });
+
+  /* selection checkboxes */
+  t.querySelectorAll('.row-chk, .col-chk').forEach(chk => {
+    chk.addEventListener('change', updateSelUI);
+  });
+}
+
+/* ── Toolbar ── */
+function addRow(pos) {
+  syncFromDOM();
+  const empty = new Array(S.headers.length).fill('');
+  pos==='top' ? S.rows.unshift(empty) : S.rows.push(empty);
+  buildEditor();
+}
+function addCol(pos) {
+  syncFromDOM();
+  if (pos==='left') {
+    S.headers.unshift('Col'); S.rows=S.rows.map(r=>{r.unshift('');return r;});
+    aligns.unshift('c'); isNum.unshift(false);
+  } else {
+    S.headers.push('Col'); S.rows=S.rows.map(r=>{r.push('');return r;});
+    aligns.push('c'); isNum.push(false);
+  }
+  buildEditor(); buildAlignUI();
+}
+
+document.getElementById('addRowTopBtn').addEventListener('click', () => addRow('top'));
+document.getElementById('addRowBotBtn').addEventListener('click', () => addRow('bot'));
+document.getElementById('addRowInlineBtn').addEventListener('click', () => {
+  addRow('bot');
+  setTimeout(() => { const sc=document.querySelector('.editor-scroll'); sc.scrollTop=sc.scrollHeight; }, 50);
+});
+document.getElementById('addColLBtn').addEventListener('click', () => addCol('left'));
+document.getElementById('addColRBtn').addEventListener('click', () => addCol('right'));
+
+/* Delete selected rows */
+document.getElementById('delRowsBtn').addEventListener('click', () => {
+  const sel = getSelRows();
+  if (!sel.length) return;
+  syncFromDOM();
+  S.rows = S.rows.filter((_,ri) => !sel.includes(ri));
+  buildEditor(); buildAlignUI();
+});
+
+/* Delete selected cols */
+document.getElementById('delColsBtn').addEventListener('click', () => {
+  const sel = getSelCols().sort((a,b)=>b-a); // descending so splice doesn't shift
+  if (!sel.length) return;
+  syncFromDOM();
+  sel.forEach(ci => {
+    S.headers.splice(ci,1);
+    aligns.splice(ci,1);
+    isNum.splice(ci,1);
+    S.rows.forEach(r => r.splice(ci,1));
+  });
+  buildEditor(); buildAlignUI();
+});
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  if (!confirm('Clear all cell values?')) return;
+  syncFromDOM(); S.rows=S.rows.map(r=>r.map(()=>'')); buildEditor();
+});
+
+/* ── Generate ── */
+document.getElementById('generateBtn').addEventListener('click', () => {
+  syncFromDOM(); isNum=detectNum(S); buildAlignUI();
+  renderPreview();
+  document.getElementById('latexOut').innerHTML = highlight(generateLatex());
+  updateStatus(); switchTab('latex');
+});
+
+/* ── Align UI ── */
+function buildAlignUI() {
+  while (aligns.length < S.headers.length) aligns.push('c');
+  document.getElementById('colAlignGrid').innerHTML = S.headers.map((h,i) => {
+    const num = isNum[i];
+    const badge = num ? '<span class="numeric-badge">num</span>' : '';
+    const opts = num ? ['l','c','r','S'] : ['l','c','r'];
+    const btns = opts.map(a =>
+      `<button class="ab${aligns[i]===a?' active':''}" onclick="setAlign(${i},'${a}')">${a}</button>`
+    ).join('');
+    return `<div class="col-align-row">
+      <span class="col-name" title="${esc(h)}">${esc(h)}${badge}</span>
+      <div class="align-btns">${btns}</div>
+    </div>`;
+  }).join('');
+}
+function setAlign(i, a) { aligns[i]=a; buildAlignUI(); }
+
+/* ── Preview ── */
+function renderPreview() {
+  const booktabs=v('booktabs').checked, gridlines=v('gridlines').checked;
+  const zebra=v('zebra').checked, bold=v('boldHeader').checked;
+  const pad=v('rowpad').value+'px 14px', useSI=v('siunitx').checked;
+  const n=S.headers.length;
+
+  let cls='preview';
+  if (booktabs) cls+=' booktabs';
+  if (!gridlines) cls+=' no-hlines';
+  if (zebra) cls+=' zebra';
+
+  const ac=i=>{const a=aligns[i]||'c'; return a==='S'?'ar num':(a==='l'?'al':a==='r'?'ar':'ac');};
+
+  let html=`<table class="${cls}"><thead><tr>`;
+  S.headers.forEach((h,i)=>{
+    const badge=(useSI&&isNum[i]&&aligns[i]==='S')?'<span class="numeric-badge">S</span>':'';
+    html+=`<th class="${ac(i)}" style="padding:${pad}">${bold?`<strong>${esc(h)}</strong>`:esc(h)}${badge}</th>`;
+  });
+  html+='</tr></thead><tbody>';
+  S.rows.forEach(row=>{
+    html+='<tr>';
+    for(let ci=0;ci<n;ci++) html+=`<td class="${ac(ci)}" style="padding:${pad}">${esc(row[ci]||'')}</td>`;
+    html+='</tr>';
+  });
+  html+='</tbody></table>';
+  document.getElementById('previewWrap').innerHTML=html;
+}
+
+/* ── LaTeX generator ── */
+function generateLatex() {
+  const booktabs=v('booktabs').checked, gridlines=v('gridlines').checked;
+  const vlines=v('vlines').checked, zebra=v('zebra').checked;
+  const bold=v('boldHeader').checked, useSI=v('siunitx').checked;
+  const fontSize=v('fontSize').value, rowpad=v('rowpad').value;
+  const dec=v('decimals').value, floatEnv=v('floatEnv').value;
+  const pos=v('position').value, caption=v('caption').value;
+  const label=v('label').value, capPos=v('captionPos').value;
+  const n=S.headers.length, useFloat=floatEnv!=='none';
+
+  const pkgs=[];
+  if(booktabs) pkgs.push('booktabs');
+  if(useSI&&isNum.some((x,i)=>x&&aligns[i]==='S')) pkgs.push('siunitx');
+  if(zebra) pkgs.push('xcolor');
+
+  let out='';
+  if(pkgs.length) out+=`% Required packages: \\usepackage{${pkgs.join(',')}}\n`;
+  if(pkgs.includes('siunitx')) out+=`% siunitx setup: \\sisetup{round-mode=places,round-precision=${dec}}\n`;
+  out+='\n';
+
+  const colSpec=()=>{
+    const sep=vlines?'|':''; let s=vlines?'|':'';
+    aligns.slice(0,n).forEach((a,i)=>{
+      s+=(useSI&&isNum[i]&&a==='S')?`S[table-format=1.${dec}]`:a; s+=sep;
+    }); return s;
+  };
+
+  if(useFloat) out+=`\\begin{${floatEnv}}[${pos}]\n  \\centering\n`;
+  else out+=`\\begingroup\n  \\centering\n`;
+
+  if(caption&&capPos==='above'){
+    if(useFloat) out+=`  \\caption{${caption}}\n`;
+    if(label) out+=`  \\label{${label}}\n`;
+  }
+
+  out+=`  ${fontSize}\n`;
+  out+=`  \\setlength{\\tabcolsep}{${rowpad}pt}\n`;
+  if(zebra) out+=`  \\rowcolors{2}{gray!10}{white}\n`;
+  out+=`  \\begin{tabular}{${colSpec()}}\n`;
+  if(booktabs) out+=`    \\toprule\n`; else if(gridlines) out+=`    \\hline\n`;
+
+  const hCells=S.headers.map((h,i)=>{
+    const isSI=useSI&&isNum[i]&&aligns[i]==='S';
+    const w=isSI?`{${h}}`:h;
+    return bold?`\\textbf{${w}}`:w;
+  });
+  out+=`    ${hCells.join(' & ')} \\\\\n`;
+  if(booktabs) out+=`    \\midrule\n`; else if(gridlines) out+=`    \\hline\n`;
+
+  S.rows.forEach((row,ri)=>{
+    out+=`    ${row.slice(0,n).map(c=>c||'').join(' & ')} \\\\\n`;
+    if(gridlines&&ri<S.rows.length-1) out+=`    \\hline\n`;
+  });
+
+  if(booktabs) out+=`    \\bottomrule\n`; else if(gridlines) out+=`    \\hline\n`;
+  out+=`  \\end{tabular}\n`;
+
+  if(caption&&capPos==='below'){
+    if(useFloat) out+=`  \\caption{${caption}}\n`;
+    if(label) out+=`  \\label{${label}}\n`;
+  }
+  out+=useFloat?`\\end{${floatEnv}}`:`\\endgroup`;
+  return out;
+}
+
+/* ── Highlight ── */
+function highlight(code) {
+  return code
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/(%.+)/g,'<span class="latex-cmt">$1</span>')
+    .replace(/\\([a-zA-Z*]+)/g,'<span class="latex-kw">\\$1</span>')
+    .replace(/\{([^}]*)\}/g,'{<span class="latex-arg">$1</span>}')
+    .replace(/\b(\d+\.?\d*)\b/g,'<span class="latex-num">$1</span>');
+}
+
+/* ── Helpers ── */
+function v(id){return document.getElementById(id);}
+function updateStatus(){
+  v('previewStatus').textContent=`${S.headers.length} cols · ${S.rows.length} rows`;
+}
+function switchTab(id){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===id));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id==='tab-'+id));
+}
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.tab)));
+
+/* ── Sliders ── */
+v('rowpad').addEventListener('input',function(){v('rowpadVal').textContent=this.value+'pt';});
+v('decimals').addEventListener('input',function(){v('decimalsVal').textContent=this.value;});
+
+/* ── Export / Copy ── */
+v('exportBtn').addEventListener('click',()=>{
+  const blob=new Blob([generateLatex()],{type:'text/plain'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=(v('label').value||'table').replace('tab:','')+'.tex'; a.click();
+});
+v('copyBtn').addEventListener('click',()=>{
+  navigator.clipboard.writeText(generateLatex()).then(()=>{
+    const s=v('copyStatus'); s.textContent='✓ Copied'; s.className='status ok';
+    setTimeout(()=>{s.textContent='';s.className='status';},2000);
+  });
+});
+
+/* ── File loading ── */
+function loadData(data) {
+  if(!data){v('csvErr').textContent='Could not parse file.';return;}
+  v('csvErr').textContent='';
+  S=data; isNum=detectNum(S); aligns=S.headers.map((_,i)=>isNum[i]?'S':'c');
+  buildEditor(); buildAlignUI(); renderPreview();
+  v('latexOut').innerHTML=highlight(generateLatex()); updateStatus();
+}
+
+v('csvInput').addEventListener('input',()=>{const d=parseCSV(v('csvInput').value);if(d)loadData(d);});
+v('fileInput').addEventListener('change',e=>{
+  const file=e.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  if(file.name.match(/\.csv$/i)){
+    reader.onload=ev=>{v('csvInput').value=ev.target.result;loadData(parseCSV(ev.target.result));};
+    reader.readAsText(file);
+  } else {
+    reader.onload=ev=>loadData(parseXLSX(new Uint8Array(ev.target.result)));
+    reader.readAsArrayBuffer(file);
+  }
+});
+
+const dz=v('dropZone');
+v('browseLink').addEventListener('click',()=>v('fileInput').click());
+dz.addEventListener('click',()=>v('fileInput').click());
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
+dz.addEventListener('drop',e=>{
+  e.preventDefault(); dz.classList.remove('drag-over');
+  const file=e.dataTransfer.files[0]; if(!file) return;
+  const dt=new DataTransfer(); dt.items.add(file);
+  v('fileInput').files=dt.files; v('fileInput').dispatchEvent(new Event('change'));
+});
+
+/* ── Init ── */
+loadData(parseCSV(v('csvInput').value));
+</script>
+</body>
+</html>
